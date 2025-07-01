@@ -94,8 +94,14 @@ func main() {
 
 	http.Handle("/", r)
 
-	errLogger.Fatal(serveTLS(tlsCert, tlsKey, *flagAddr))
+	err = serveTLS(tlsCert, tlsKey, *flagAddr)
+	if err != nil {
+		// Print error explicitly before calling Fatal
+		println("serveTLS returned error:", err.Error())
+		errLogger.Fatal(err)
+	}
 }
+
 
 func setupLogging(gitSha, service string) (*log.Logger, *log.Logger) {
 	accLogger := log.New(os.Stderr, "", 0)
