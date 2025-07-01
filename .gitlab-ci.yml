@@ -2,32 +2,37 @@ stages:
   - test
 
 variables:
-  SERVER_CERT: "server.crt"
-  SERVER_KEY: "server.key"
-  CA_CERT: "ca.crt"
-  CLIENT_CERT: "client.crt"
-  CLIENT_KEY: "client.key"
+  SERVER_CERT: server.crt
+  SERVER_KEY: server.key
+  CA_CERT: ca.crt
+  CLIENT_CERT: client.crt
+  CLIENT_KEY: client.key
 
 test_log_injection:
   stage: test
   image: golang:1.24
-  script:
-    # Save TLS certs from CI variables or artifacts (you need to set these securely in GitLab)
+  before_script:
+    # Save TLS certs from CI variables (make sure these are set in your GitLab CI variables)
     - echo "$SERVER_CERT_CONTENT" > $SERVER_CERT
     - echo "$SERVER_KEY_CONTENT" > $SERVER_KEY
     - echo "$CA_CERT_CONTENT" > $CA_CERT
     - echo "$CLIENT_CERT_CONTENT" > $CLIENT_CERT
     - echo "$CLIENT_KEY_CONTENT" > $CLIENT_KEY
 
-    # Build the Knox server binary
+  script:
+    # Build Knox server
     - go build -o knox-server ./cmd/dev_server
 
-    # Start Knox server in background
+    # Start Knox server in background with TLS certs
     - ./knox-server --http :9000 --cert $SERVER_CERT --key $SERVER_KEY --ca $CA_CERT > knox.log 2>&1 &
-    - sleep 3
+    - sleep 5
 
-    # Send the malicious request with injected newlines in the key path
+    # Send malicious request with newline injection
     - curl --cert $CLIENT_CERT --key $CLIENT_KEY --cacert $CA_CERT -k "https://localhost:9000/v1/keys/%0Ainjected:true%0A"
 
-    # Check if injection string appears in logs
+    # Check logs for injection evidence and fail if not found
     - if grep -q "injected:true" knox.log; then echo "Log injection succeeded"; else echo "Log injection failed" && exit 1; fi
+
+  after_script:
+    # Kill Knox server process (clean up)
+    - pkill knox-server || true
