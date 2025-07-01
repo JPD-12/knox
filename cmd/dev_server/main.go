@@ -8,9 +8,7 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
-	"expvar"
 	"flag"
-	"log"
 	"math/big"
 	"net"
 	"net/http"
@@ -18,6 +16,7 @@ import (
 	"time"
 
 	"github.com/pinterest/knox"
+	"github.com/pinterest/knox/log"
 	"github.com/pinterest/knox/server"
 	"github.com/pinterest/knox/server/auth"
 	"github.com/pinterest/knox/server/keydb"
@@ -47,21 +46,25 @@ const (
 )
 
 func main() {
-	// Setup logging
+	// Setup Knox logger
 	logFile, err := os.OpenFile("knox_server.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		log.Fatal("Failed to open log file: ", err)
 	}
 	defer logFile.Close()
 
-	log.SetOutput(logFile)
-	log.Println("Starting Knox server...")
+	accLogger := log.New(logFile, "", 0)
+	errLogger := log.New(logFile, "", 0)
+	accLogger.SetVersion("dev")
+	accLogger.SetService(serviceName)
+	errLogger.SetVersion("dev")
+	errLogger.SetService(serviceName)
 
 	flag.Parse()
 
 	// Verify port is available
 	if err := checkPortAvailable(*flagAddr); err != nil {
-		log.Fatal("Port check failed: ", err)
+		errLogger.Fatal("Port check failed: ", err)
 	}
 
 	// Setup crypto and database
@@ -79,17 +82,17 @@ func main() {
 	// Build TLS certificate
 	tlsCert, tlsKey, err := buildCert()
 	if err != nil {
-		log.Fatal("Failed to build certificate: ", err)
+		errLogger.Fatal("Failed to build certificate: ", err)
 	}
 
 	// Setup authentication
 	certPool := x509.NewCertPool()
 	if !certPool.AppendCertsFromPEM([]byte(caCert)) {
-		log.Fatal("Failed to parse CA certificate")
+		errLogger.Fatal("Failed to parse CA certificate")
 	}
 
 	decorators := []func(http.HandlerFunc) http.HandlerFunc{
-		server.Logger(log.Default()),
+		server.Logger(accLogger),
 		server.AddHeader("Content-Type", "application/json"),
 		server.AddHeader("X-Content-Type-Options", "nosniff"),
 		server.Authentication(
@@ -105,15 +108,15 @@ func main() {
 	// Get router
 	r, err := server.GetRouter(cryptor, db, decorators, make([]server.Route, 0))
 	if err != nil {
-		log.Fatal("Failed to create router: ", err)
+		errLogger.Fatal("Failed to create router: ", err)
 	}
 
 	http.Handle("/", r)
 
 	// Start server
-	log.Printf("Starting server on %s...", *flagAddr)
-	if err := serveTLS(tlsCert, tlsKey, *flagAddr); err != nil {
-		log.Fatal("Server failed: ", err)
+	accLogger.Log("msg", "Starting server on "+*flagAddr)
+	if err := serveTLS(tlsCert, tlsKey, *flagAddr, accLogger, errLogger); err != nil {
+		errLogger.Fatal("Server failed: ", err)
 	}
 }
 
@@ -126,8 +129,6 @@ func checkPortAvailable(addr string) error {
 }
 
 func buildCert() ([]byte, []byte, error) {
-	log.Println("Generating TLS certificate...")
-
 	priv, err := ecdsa.GenerateKey(elliptic.P256(), crypto_rand.Reader)
 	if err != nil {
 		return nil, nil, err
@@ -170,7 +171,7 @@ func buildCert() ([]byte, []byte, error) {
 	return certPEM, keyPEM, nil
 }
 
-func serveTLS(certPEMBlock, keyPEMBlock []byte, addr string) error {
+func serveTLS(certPEMBlock, keyPEMBlock []byte, addr string, accLogger, errLogger *log.Logger) error {
 	tlsConfig := &tls.Config{
 		NextProtos:               []string{"http/1.1"},
 		MinVersion:               tls.VersionTLS12,
@@ -198,6 +199,7 @@ func serveTLS(certPEMBlock, keyPEMBlock []byte, addr string) error {
 		return err
 	}
 
+	accLogger.Log("msg", "Server listening on "+addr)
 	tlsListener := tls.NewListener(ln, tlsConfig)
 	return server.Serve(tlsListener)
 }
