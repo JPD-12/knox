@@ -114,7 +114,7 @@ func main() {
 	http.Handle("/", r)
 
 	// Start server
-	accLogger.Log("msg", "Starting server on "+*flagAddr)
+	accLogger.Info("Starting server on " + *flagAddr)
 	if err := serveTLS(tlsCert, tlsKey, *flagAddr, accLogger, errLogger); err != nil {
 		errLogger.Fatal("Server failed: ", err)
 	}
@@ -199,7 +199,7 @@ func serveTLS(certPEMBlock, keyPEMBlock []byte, addr string, accLogger, errLogge
 		return err
 	}
 
-	accLogger.Log("msg", "Server listening on "+addr)
+	accLogger.Info("Server listening on " + addr)
 	tlsListener := tls.NewListener(ln, tlsConfig)
 	return server.Serve(tlsListener)
 }
