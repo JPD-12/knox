@@ -15,7 +15,7 @@ generate_certs:
     # Create CA key and cert
     - openssl ecparam -name prime256v1 -genkey -noout -out certs/ca.key
     - openssl req -x509 -new -nodes -key certs/ca.key -sha256 -days 1 -out certs/ca.crt -subj "/CN=MyCA"
-    # Server key + CSR + cert
+    
     - openssl ecparam -name prime256v1 -genkey -noout -out certs/server.key
     - openssl req -new -key certs/server.key -out certs/server.csr -subj "/CN=localhost"
     - openssl x509 -req -in certs/server.csr -CA certs/ca.crt -CAkey certs/ca.key -CAcreateserial -out certs/server.crt -days 1 -sha256
