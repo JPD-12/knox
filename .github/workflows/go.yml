@@ -53,13 +53,13 @@ jobs:
           sleep 15
           cat knox_server.log
 
-      - name: Check if port 8080 is listening
-        run: netstat -tulnp | grep 8080 || true
+      - name: Check if port 9000 is listening
+        run: netstat -tulnp | grep 9000 || true
 
       - name: Run curl tests
         run: |
-          curl -v http://localhost:8080/normal/path || true
-          curl -v http://localhost:8080/../../../etc/passwd || true
+          curl -v http://localhost:9000/normal/path || true
+          curl -v http://localhost:9000/../../../etc/passwd || true
 
       - name: Stop Knox server
         run: kill $(cat server.pid) || true
