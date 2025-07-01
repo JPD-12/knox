@@ -102,7 +102,6 @@ func main() {
 	}
 }
 
-
 func setupLogging(gitSha, service string) (*log.Logger, *log.Logger) {
 	accLogger := log.New(os.Stderr, "", 0)
 	accLogger.SetVersion(gitSha)
