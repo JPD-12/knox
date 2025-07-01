@@ -10,14 +10,14 @@ import (
 	"encoding/pem"
 	"expvar"
 	"flag"
+	"log"
 	"math/big"
-	"math/rand"
+	"net"
 	"net/http"
 	"os"
 	"time"
 
 	"github.com/pinterest/knox"
-	"github.com/pinterest/knox/log"
 	"github.com/pinterest/knox/server"
 	"github.com/pinterest/knox/server/auth"
 	"github.com/pinterest/knox/server/keydb"
@@ -37,44 +37,59 @@ qLpqrzVF7N7UQ3mxTl01MvnsqvahI08CIQCArwO8KmbPbN5XZrQ2h9zUgbsebwSG
 dfOY505yMqiXig==
 -----END CERTIFICATE-----`
 
-var gitSha = expvar.NewString("version")
-var service = expvar.NewString("service")
-
 var (
 	flagAddr = flag.String("http", ":9000", "HTTP port to listen on")
 )
 
 const (
-	authTimeout = 10 * time.Second // Calls to auth timeout after 10 seconds
+	authTimeout = 10 * time.Second
 	serviceName = "knox_dev"
 )
 
 func main() {
-	rand.Seed(time.Now().UTC().UnixNano())
-	flag.Parse()
-	accLogger, errLogger := setupLogging("dev", serviceName)
-
-	dbEncryptionKey := []byte("testtesttesttest")
-	cryptor := keydb.NewAESGCMCryptor(0, dbEncryptionKey)
-
-	tlsCert, tlsKey, err := buildCert()
+	// Setup logging
+	logFile, err := os.OpenFile("knox_server.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
-		errLogger.Fatal("Failed to make TLS key or cert: ", err)
+		log.Fatal("Failed to open log file: ", err)
+	}
+	defer logFile.Close()
+
+	log.SetOutput(logFile)
+	log.Println("Starting Knox server...")
+
+	flag.Parse()
+
+	// Verify port is available
+	if err := checkPortAvailable(*flagAddr); err != nil {
+		log.Fatal("Port check failed: ", err)
 	}
 
+	// Setup crypto and database
+	dbEncryptionKey := []byte("testtesttesttest")
+	cryptor := keydb.NewAESGCMCryptor(0, dbEncryptionKey)
 	db := keydb.NewTempDB()
 
+	// Add default access
 	server.AddDefaultAccess(&knox.Access{
 		Type:       knox.UserGroup,
 		ID:         "security-team",
 		AccessType: knox.Admin,
 	})
 
-	certPool := x509.NewCertPool()
-	certPool.AppendCertsFromPEM([]byte(caCert))
+	// Build TLS certificate
+	tlsCert, tlsKey, err := buildCert()
+	if err != nil {
+		log.Fatal("Failed to build certificate: ", err)
+	}
 
-	decorators := [](func(http.HandlerFunc) http.HandlerFunc){
-		server.Logger(accLogger),
+	// Setup authentication
+	certPool := x509.NewCertPool()
+	if !certPool.AppendCertsFromPEM([]byte(caCert)) {
+		log.Fatal("Failed to parse CA certificate")
+	}
+
+	decorators := []func(http.HandlerFunc) http.HandlerFunc{
+		server.Logger(log.Default()),
 		server.AddHeader("Content-Type", "application/json"),
 		server.AddHeader("X-Content-Type-Options", "nosniff"),
 		server.Authentication(
@@ -87,40 +102,39 @@ func main() {
 			nil),
 	}
 
+	// Get router
 	r, err := server.GetRouter(cryptor, db, decorators, make([]server.Route, 0))
 	if err != nil {
-		errLogger.Fatal(err)
+		log.Fatal("Failed to create router: ", err)
 	}
 
 	http.Handle("/", r)
 
-	err = serveTLS(tlsCert, tlsKey, *flagAddr)
-	if err != nil {
-		// Print error explicitly before calling Fatal
-		println("serveTLS returned error:", err.Error())
-		errLogger.Fatal(err)
+	// Start server
+	log.Printf("Starting server on %s...", *flagAddr)
+	if err := serveTLS(tlsCert, tlsKey, *flagAddr); err != nil {
+		log.Fatal("Server failed: ", err)
 	}
 }
 
-func setupLogging(gitSha, service string) (*log.Logger, *log.Logger) {
-	accLogger := log.New(os.Stderr, "", 0)
-	accLogger.SetVersion(gitSha)
-	accLogger.SetService(service)
-
-	errLogger := log.New(os.Stderr, "", 0)
-	errLogger.SetVersion(gitSha)
-	errLogger.SetService(service)
-	return accLogger, errLogger
+func checkPortAvailable(addr string) error {
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		return err
+	}
+	return ln.Close()
 }
 
-func buildCert() (certPEMBlock, keyPEMBlock []byte, err error) {
+func buildCert() ([]byte, []byte, error) {
+	log.Println("Generating TLS certificate...")
+
 	priv, err := ecdsa.GenerateKey(elliptic.P256(), crypto_rand.Reader)
 	if err != nil {
 		return nil, nil, err
 	}
 
 	notBefore := time.Now()
-	notAfter := notBefore.Add(24 * time.Hour)
+	notAfter := notBefore.Add(365 * 24 * time.Hour) // 1 year validity
 	serialNumberLimit := new(big.Int).Lsh(big.NewInt(1), 128)
 	serialNumber, err := crypto_rand.Int(crypto_rand.Reader, serialNumberLimit)
 	if err != nil {
@@ -129,32 +143,34 @@ func buildCert() (certPEMBlock, keyPEMBlock []byte, err error) {
 
 	template := x509.Certificate{
 		SerialNumber: serialNumber,
-		Subject:      pkix.Name{Organization: []string{"Acme Co"}},
-		NotBefore:    notBefore,
-		NotAfter:     notAfter,
-
+		Subject: pkix.Name{
+			Organization: []string{"Knox Dev"},
+		},
+		NotBefore:             notBefore,
+		NotAfter:              notAfter,
 		KeyUsage:              x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
 		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 		BasicConstraintsValid: true,
+		DNSNames:              []string{"localhost"},
 	}
-
-	template.DNSNames = []string{"localhost"}
 
 	derBytes, err := x509.CreateCertificate(crypto_rand.Reader, &template, &template, &priv.PublicKey, priv)
 	if err != nil {
 		return nil, nil, err
 	}
-	b, err := x509.MarshalECPrivateKey(priv)
+
+	privBytes, err := x509.MarshalECPrivateKey(priv)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	return pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: derBytes}), pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: b}), nil
+	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: derBytes})
+	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: privBytes})
+
+	return certPEM, keyPEM, nil
 }
 
-// serveTLS sets up TLS using Mozilla reccommendations and then serves http
-func serveTLS(certPEMBlock, keyPEMBlock []byte, httpPort string) error {
-	// This TLS config disables RC4 and SSLv3.
+func serveTLS(certPEMBlock, keyPEMBlock []byte, addr string) error {
 	tlsConfig := &tls.Config{
 		NextProtos:               []string{"http/1.1"},
 		MinVersion:               tls.VersionTLS12,
@@ -166,13 +182,22 @@ func serveTLS(certPEMBlock, keyPEMBlock []byte, httpPort string) error {
 		},
 	}
 
-	tlsConfig.Certificates = make([]tls.Certificate, 1)
-	var err error
-	tlsConfig.Certificates[0], err = tls.X509KeyPair(certPEMBlock, keyPEMBlock)
+	cert, err := tls.X509KeyPair(certPEMBlock, keyPEMBlock)
 	if err != nil {
 		return err
 	}
-	server := &http.Server{Addr: httpPort, Handler: nil, TLSConfig: tlsConfig}
+	tlsConfig.Certificates = []tls.Certificate{cert}
 
-	return server.ListenAndServeTLS("", "")
+	server := &http.Server{
+		Addr:      addr,
+		TLSConfig: tlsConfig,
+	}
+
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		return err
+	}
+
+	tlsListener := tls.NewListener(ln, tlsConfig)
+	return server.Serve(tlsListener)
 }
