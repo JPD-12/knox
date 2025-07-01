@@ -9,6 +9,7 @@ import (
 	"crypto/x509/pkix"
 	"encoding/pem"
 	"flag"
+	"fmt"
 	"math/big"
 	"net"
 	"net/http"
@@ -49,7 +50,8 @@ func main() {
 	// Setup Knox logger
 	logFile, err := os.OpenFile("knox_server.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
-		log.Fatal("Failed to open log file: ", err)
+		fmt.Fprintf(os.Stderr, "Failed to open log file: %v\n", err)
+		os.Exit(1)
 	}
 	defer logFile.Close()
 
@@ -64,7 +66,8 @@ func main() {
 
 	// Verify port is available
 	if err := checkPortAvailable(*flagAddr); err != nil {
-		errLogger.Fatal("Port check failed: ", err)
+		fmt.Fprintf(logFile, "Port check failed: %v\n", err)
+		os.Exit(1)
 	}
 
 	// Setup crypto and database
@@ -82,13 +85,15 @@ func main() {
 	// Build TLS certificate
 	tlsCert, tlsKey, err := buildCert()
 	if err != nil {
-		errLogger.Fatal("Failed to build certificate: ", err)
+		fmt.Fprintf(logFile, "Failed to build certificate: %v\n", err)
+		os.Exit(1)
 	}
 
 	// Setup authentication
 	certPool := x509.NewCertPool()
 	if !certPool.AppendCertsFromPEM([]byte(caCert)) {
-		errLogger.Fatal("Failed to parse CA certificate")
+		fmt.Fprintln(logFile, "Failed to parse CA certificate")
+		os.Exit(1)
 	}
 
 	decorators := []func(http.HandlerFunc) http.HandlerFunc{
@@ -108,15 +113,17 @@ func main() {
 	// Get router
 	r, err := server.GetRouter(cryptor, db, decorators, make([]server.Route, 0))
 	if err != nil {
-		errLogger.Fatal("Failed to create router: ", err)
+		fmt.Fprintf(logFile, "Failed to create router: %v\n", err)
+		os.Exit(1)
 	}
 
 	http.Handle("/", r)
 
 	// Start server
-	accLogger.Info("Starting server on " + *flagAddr)
-	if err := serveTLS(tlsCert, tlsKey, *flagAddr, accLogger, errLogger); err != nil {
-		errLogger.Fatal("Server failed: ", err)
+	fmt.Fprintf(logFile, "Starting server on %s\n", *flagAddr)
+	if err := serveTLS(tlsCert, tlsKey, *flagAddr); err != nil {
+		fmt.Fprintf(logFile, "Server failed: %v\n", err)
+		os.Exit(1)
 	}
 }
 
@@ -171,7 +178,7 @@ func buildCert() ([]byte, []byte, error) {
 	return certPEM, keyPEM, nil
 }
 
-func serveTLS(certPEMBlock, keyPEMBlock []byte, addr string, accLogger, errLogger *log.Logger) error {
+func serveTLS(certPEMBlock, keyPEMBlock []byte, addr string) error {
 	tlsConfig := &tls.Config{
 		NextProtos:               []string{"http/1.1"},
 		MinVersion:               tls.VersionTLS12,
@@ -199,7 +206,7 @@ func serveTLS(certPEMBlock, keyPEMBlock []byte, addr string, accLogger, errLogge
 		return err
 	}
 
-	accLogger.Info("Server listening on " + addr)
+	fmt.Printf("Server listening on %s\n", addr)
 	tlsListener := tls.NewListener(ln, tlsConfig)
 	return server.Serve(tlsListener)
 }
