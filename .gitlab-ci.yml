@@ -1,0 +1,58 @@
+stages:
+  - generate-certs
+  - build
+  - test
+
+variables:
+  GO111MODULE: "on"
+
+generate_certs:
+  stage: generate-certs
+  image: alpine:latest
+  script:
+    - apk add --no-cache openssl
+    - mkdir -p certs
+    # Create CA key and cert
+    - openssl ecparam -name prime256v1 -genkey -noout -out certs/ca.key
+    - openssl req -x509 -new -nodes -key certs/ca.key -sha256 -days 1 -out certs/ca.crt -subj "/CN=MyCA"
+    # Server key + CSR + cert
+    - openssl ecparam -name prime256v1 -genkey -noout -out certs/server.key
+    - openssl req -new -key certs/server.key -out certs/server.csr -subj "/CN=localhost"
+    - openssl x509 -req -in certs/server.csr -CA certs/ca.crt -CAkey certs/ca.key -CAcreateserial -out certs/server.crt -days 1 -sha256
+    # Client key + CSR + cert
+    - openssl ecparam -name prime256v1 -genkey -noout -out certs/client.key
+    - openssl req -new -key certs/client.key -out certs/client.csr -subj "/CN=client"
+    - openssl x509 -req -in certs/client.csr -CA certs/ca.crt -CAkey certs/ca.key -CAcreateserial -out certs/client.crt -days 1 -sha256
+  artifacts:
+    paths:
+      - certs/
+
+build_server:
+  stage: build
+  image: golang:1.20-alpine
+  dependencies:
+    - generate_certs
+  script:
+    - apk add --no-cache git
+    - go mod download
+    # Adjust this path to your main.go location inside the repo
+    - go build -o knox-server ./cmd/dev_server/main.go
+  artifacts:
+    paths:
+      - knox-server
+
+test_server:
+  stage: test
+  image: alpine:latest
+  dependencies:
+    - generate_certs
+    - build_server
+  script:
+    - apk add --no-cache bash curl openssl
+    # Run server in background
+    - ./knox-server --http :9000 --cert certs/server.crt --key certs/server.key --ca certs/ca.crt &
+    - SERVER_PID=$!
+    - sleep 3
+    # Test with curl using client cert
+    - curl --cert certs/client.crt --key certs/client.key --cacert certs/ca.crt -v https://localhost:9000/v1/keys/foo || (kill $SERVER_PID && false)
+    - kill $SERVER_PID
