@@ -46,30 +46,26 @@ jobs:
         with:
           go-version: ^1.24
 
-      - name: Start Knox dev server in background
+      - name: Start Knox server in background
         run: |
           go run ./cmd/dev_server > knox_server.log 2>&1 &
           echo $! > server.pid
-          sleep 10
+          sleep 15
+          cat knox_server.log
 
       - name: Check if port 8080 is listening
         run: netstat -tulnp | grep 8080 || true
 
-      - name: Run exploit curl commands
+      - name: Run curl tests
         run: |
           curl -v http://localhost:8080/normal/path || true
           curl -v http://localhost:8080/../../../etc/passwd || true
-          curl -v http://localhost:8080/api/v1/keys/../../../../../etc/passwd || true
-          curl -v "http://localhost:8080/%2e%2e/%2e%2e/%2e%2e/etc/passwd" || true
-
-      - name: Sleep to flush logs
-        run: sleep 2
 
       - name: Stop Knox server
         run: kill $(cat server.pid) || true
 
-      - name: Show Knox server logs
-        run: cat knox_server.log || echo "No logs found"
+      - name: Show Knox logs again
+        run: cat knox_server.log
 
       - name: Upload Knox server logs as artifact
         uses: actions/upload-artifact@v4
