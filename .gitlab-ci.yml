@@ -27,20 +27,31 @@ exploit_poc:
 
     - echo "Running malicious requests..."
     - |
-      curl -v http://localhost:8080/normal/path || true
-      curl -v http://localhost:8080/../../../etc/passwd || true
-      curl -v http://localhost:8080/api/v1/keys/../../../../../etc/passwd || true
-      curl -v "http://localhost:8080/%2e%2e/%2e%2e/%2e%2e/etc/passwd" || true
+      # Run exploit curl requests and save output
+      curl -s -w "%{http_code}" http://localhost:8080/normal/path -o normal.txt || true
+      curl -s -w "%{http_code}" http://localhost:8080/../../../etc/passwd -o exploit1.txt || true
+      curl -s -w "%{http_code}" http://localhost:8080/api/v1/keys/../../../../../etc/passwd -o exploit2.txt || true
+      curl -s -w "%{http_code}" "http://localhost:8080/%2e%2e/%2e%2e/%2e%2e/etc/passwd" -o exploit3.txt || true
 
-    - echo "Sleeping 2 seconds to ensure logs are flushed..."
-    - sleep 2
-
-    - echo "Killing server..."
+    - echo "Killing Knox server..."
     - kill $SERVER_PID || true
+    - wait $SERVER_PID 2>/dev/null || true
 
-    - echo "Gather logs from Knox (adjust path as needed)..."
-    - cat knox.log || echo "No logs found"
+    - echo "Checking exploit results for suspicious content..."
+
+    # Basic heuristic: if /etc/passwd appears in output, fail the job
+    - if grep -q 'root:x:0:0:' exploit1.txt exploit2.txt exploit3.txt; then
+        echo "Exploit SUCCESS: /etc/passwd content leaked!";
+        exit 1;
+      else
+        echo "Exploit FAILURE: No leakage detected.";
+      fi
 
   artifacts:
     paths:
+      - normal.txt
+      - exploit1.txt
+      - exploit2.txt
+      - exploit3.txt
       - knox.log
+    expire_in: 1 week
