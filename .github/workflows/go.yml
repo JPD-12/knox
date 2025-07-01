@@ -30,6 +30,7 @@ jobs:
       - name: Fmt
         run: diff -u <(echo -n) <(gofmt -d -s .)
 
+
       - name: Vet
         run: go vet ./...
 
@@ -48,9 +49,9 @@ jobs:
 
       - name: Start Knox server in background
         run: |
-          go run ./cmd/dev_server > knox_server.log 2>&1 &
+          go run ./cmd/dev_server -http :9000 > knox_server.log 2>&1 &
           echo $! > server.pid
-          sleep 15
+          sleep 3
           cat knox_server.log
 
       - name: Check if port 9000 is listening
