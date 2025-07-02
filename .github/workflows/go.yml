@@ -4,9 +4,9 @@ permissions: read-all
 
 on:
   push:
-    branches: [ master ]
+    branches: [master]
   pull_request:
-    branches: [ master ]
+    branches: [master]
 
 jobs:
   build:
@@ -29,6 +29,7 @@ jobs:
 
       - name: Check formatting
         run: |
+          gofmt -w .
           unformatted=$(gofmt -l .)
           if [ -n "$unformatted" ]; then
             echo "Unformatted files:"
@@ -55,34 +56,47 @@ jobs:
       - name: Install dependencies
         run: go mod download
 
-      - name: Start Knox server
+      - name: Start Knox server with debug
         run: |
-          go run ./cmd/dev_server -http :8080 -https :9000 > knox_server.log 2>&1 &
+          # Start server with debug output
+          go run ./cmd/dev_server -http :8080 -https :9000 -debug > knox_server.log 2>&1 &
           echo $! > server.pid
-          sleep 5
+          
+          # Wait for server to start (max 30 seconds)
+          timeout 30 bash -c 'until curl -k -s -o /dev/null https://localhost:9000/healthcheck; do sleep 1; done' || \
+            (echo "Server failed to start"; cat knox_server.log; exit 1)
+          
+          # Show server status
           cat knox_server.log
+          netstat -tulnp | grep -E '8080|9000' || true
 
-      - name: Verify server is running
+      - name: Verify server health
         run: |
-          curl -k https://localhost:9000/healthcheck || true
-          netstat -tulnp | grep 9000 || true
+          curl -k -v https://localhost:9000/healthcheck
 
       - name: Run security tests
         run: |
           # Test authentication requirement
-          curl -k -v https://localhost:9000/normal/path 2>&1 | grep "401 Unauthorized" || (echo "Auth test failed" && exit 1)
+          if ! curl -k -v https://localhost:9000/normal/path 2>&1 | grep -q "401 Unauthorized"; then
+            echo "Auth test failed - expected 401 Unauthorized"
+            exit 1
+          fi
           
           # Test path traversal protection
-          curl -k -v https://localhost:9000/../../../etc/passwd 2>&1 | grep "404 Not Found" || (echo "Path traversal test failed" && exit 1)
+          if ! curl -k -v https://localhost:9000/../../../etc/passwd 2>&1 | grep -q "404 Not Found"; then
+            echo "Path traversal test failed - expected 404 Not Found"
+            exit 1
+          fi
 
       - name: Stop server
+        if: always()
         run: |
           kill $(cat server.pid) || true
           sleep 1
 
-      - name: Upload logs
-        uses: actions/upload-artifact@v4
+      - name: Upload server logs
         if: always()
+        uses: actions/upload-artifact@v4
         with:
           name: knox_server_logs
           path: knox_server.log
