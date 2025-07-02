@@ -29,7 +29,6 @@ jobs:
 
       - name: Check formatting
         run: |
-          gofmt -w .
           unformatted=$(gofmt -l .)
           if [ -n "$unformatted" ]; then
             echo "Unformatted files:"
@@ -56,23 +55,18 @@ jobs:
       - name: Install dependencies
         run: go mod download
 
-      - name: Start Knox server with debug
+      - name: Start Knox server
         run: |
-          # Start server with debug output
-          go run ./cmd/dev_server -http :8080 -https :9000 -debug > knox_server.log 2>&1 &
+          # Start server without debug flag first
+          go run ./cmd/dev_server -http :8080 -https :9000 > knox_server.log 2>&1 &
           echo $! > server.pid
           
           # Wait for server to start (max 30 seconds)
           timeout 30 bash -c 'until curl -k -s -o /dev/null https://localhost:9000/healthcheck; do sleep 1; done' || \
             (echo "Server failed to start"; cat knox_server.log; exit 1)
           
-          # Show server status
           cat knox_server.log
           netstat -tulnp | grep -E '8080|9000' || true
-
-      - name: Verify server health
-        run: |
-          curl -k -v https://localhost:9000/healthcheck
 
       - name: Run security tests
         run: |
@@ -94,7 +88,7 @@ jobs:
           kill $(cat server.pid) || true
           sleep 1
 
-      - name: Upload server logs
+      - name: Upload logs
         if: always()
         uses: actions/upload-artifact@v4
         with:

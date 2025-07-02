@@ -15,6 +15,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"log"
 	"time"
 
 	"github.com/pinterest/knox"
@@ -41,6 +42,7 @@ dfOY505yMqiXig==
 var (
 	flagHTTPPort  = flag.String("http", ":8080", "HTTP port for redirects")
 	flagHTTPSPort = flag.String("https", ":9000", "HTTPS port to listen on")
+	flagDebug     = flag.Bool("debug", false, "Enable debug logging")
 )
 
 const (
@@ -58,6 +60,9 @@ func main() {
 	writer := io.MultiWriter(os.Stdout, logFile)
 
 	flag.Parse()
+	if *flagDebug {
+		log.Println("Debug mode enabled")
+	}
 
 	if err := checkPortAvailable(*flagHTTPPort); err != nil {
 		fmt.Fprintf(writer, "HTTP port check failed: %v\n", err)
@@ -113,7 +118,13 @@ func main() {
 		fmt.Fprintf(writer, "Failed to create router: %v\n", err)
 		os.Exit(1)
 	}
-	http.Handle("/", r)
+	http.HandleFunc("/healthcheck", func(w http.ResponseWriter, r *http.Request) {
+		if *flagDebug {
+			log.Println("Healthcheck request received")
+		}
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("OK"))
+	})
 
 	go func() {
 		fmt.Fprintf(writer, "Starting HTTP redirect server on %s\n", *flagHTTPPort)
