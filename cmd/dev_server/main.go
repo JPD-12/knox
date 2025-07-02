@@ -105,10 +105,10 @@ func main() {
 	authProviders := []auth.Provider{
 		// GitHub provider for testing (you'll need to configure this properly)
 		auth.NewGitHubProvider(authTimeout),
-		
+
 		// mTLS provider for production
 		auth.NewMTLSAuthProvider(certPool),
-		
+
 		// SPIFFE providers for service identity
 		auth.NewSpiffeAuthProvider(certPool),
 		auth.NewSpiffeAuthFallbackProvider(certPool),
@@ -227,4 +227,8 @@ func startHTTPSServer(certPEM, keyPEM []byte, addr string, writer io.Writer) err
 
 	tlsListener := tls.NewListener(ln, tlsConfig)
 	return server.Serve(tlsListener)
+<<<<<<< HEAD
 }
+=======
+}
+>>>>>>> 6bf0ad0 (Add exploit PoC job to GitHub Actions workflow)

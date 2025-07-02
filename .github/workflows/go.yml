@@ -27,8 +27,15 @@ jobs:
       - name: Test
         run: go test -v ./...
 
+<<<<<<< HEAD
       - name: Check formatting
         run: diff -u <(echo -n) <(gofmt -d -s .)
+=======
+      - name: Fmt
+        run: |
+          gofmt -l .
+          test -z "$(gofmt -l .)"
+>>>>>>> 6bf0ad0 (Add exploit PoC job to GitHub Actions workflow)
 
       - name: Vet
         run: go vet ./...
