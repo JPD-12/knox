@@ -15,11 +15,10 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"log"
 	"time"
 
 	"github.com/pinterest/knox"
-	"github.com/pinterest/knox/log"
+	knoxlog "github.com/pinterest/knox/log"
 	"github.com/pinterest/knox/server"
 	"github.com/pinterest/knox/server/auth"
 	"github.com/pinterest/knox/server/keydb"
@@ -60,9 +59,6 @@ func main() {
 	writer := io.MultiWriter(os.Stdout, logFile)
 
 	flag.Parse()
-	if *flagDebug {
-		log.Println("Debug mode enabled")
-	}
 
 	if err := checkPortAvailable(*flagHTTPPort); err != nil {
 		fmt.Fprintf(writer, "HTTP port check failed: %v\n", err)
@@ -95,7 +91,8 @@ func main() {
 		os.Exit(1)
 	}
 
-	knoxLogger := log.New(writer, "", 0)
+	// Use knoxlog instead of standard log
+	knoxLogger := knoxlog.New(writer, "", 0)
 	knoxLogger.SetVersion("dev")
 	knoxLogger.SetService(serviceName)
 
@@ -113,15 +110,14 @@ func main() {
 		server.Authentication(authProviders, nil),
 	}
 
-	r, err := server.GetRouter(cryptor, db, decorators, make([]server.Route, 0))
+	router, err := server.GetRouter(cryptor, db, decorators, make([]server.Route, 0))
 	if err != nil {
 		fmt.Fprintf(writer, "Failed to create router: %v\n", err)
 		os.Exit(1)
 	}
-	http.HandleFunc("/healthcheck", func(w http.ResponseWriter, r *http.Request) {
-		if *flagDebug {
-			log.Println("Healthcheck request received")
-		}
+
+	http.Handle("/", router)
+	http.HandleFunc("/healthcheck", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("OK"))
 	})
