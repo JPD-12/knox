@@ -10,6 +10,10 @@ import (
 	"encoding/pem"
 	"flag"
 	"fmt"
+<<<<<<< HEAD
+=======
+	"io"
+>>>>>>> 1f2823a (Fix formatting: remove trailing blank line)
 	"math/big"
 	"net"
 	"net/http"
@@ -38,7 +42,8 @@ dfOY505yMqiXig==
 -----END CERTIFICATE-----`
 
 var (
-	flagAddr = flag.String("http", ":9000", "HTTP port to listen on")
+	flagHTTPPort  = flag.String("http", ":8080", "HTTP port for redirects")
+	flagHTTPSPort = flag.String("https", ":9000", "HTTPS port to listen on")
 )
 
 const (
@@ -47,13 +52,18 @@ const (
 )
 
 func main() {
+<<<<<<< HEAD
 	// Setup Knox logger
+=======
+	// Setup dual logging
+>>>>>>> 1f2823a (Fix formatting: remove trailing blank line)
 	logFile, err := os.OpenFile("knox_server.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to open log file: %v\n", err)
 		os.Exit(1)
 	}
 	defer logFile.Close()
+<<<<<<< HEAD
 
 	accLogger := log.New(logFile, "", 0)
 	errLogger := log.New(logFile, "", 0)
@@ -71,17 +81,46 @@ func main() {
 	}
 
 	// Setup crypto and database
+=======
+	writer := io.MultiWriter(os.Stdout, logFile)
+
+	flag.Parse()
+
+	// Verify ports are available
+	if err := checkPortAvailable(*flagHTTPPort); err != nil {
+		fmt.Fprintf(writer, "HTTP port check failed: %v\n", err)
+		os.Exit(1)
+	}
+	if err := checkPortAvailable(*flagHTTPSPort); err != nil {
+		fmt.Fprintf(writer, "HTTPS port check failed: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Generate TLS certificate
+	tlsCert, tlsKey, err := generateTLSCertificate()
+	if err != nil {
+		fmt.Fprintf(writer, "Failed to generate TLS certificate: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Setup database and cryptor
+>>>>>>> 1f2823a (Fix formatting: remove trailing blank line)
 	dbEncryptionKey := []byte("testtesttesttest")
 	cryptor := keydb.NewAESGCMCryptor(0, dbEncryptionKey)
 	db := keydb.NewTempDB()
 
+<<<<<<< HEAD
 	// Add default access
+=======
+	// Configure default access
+>>>>>>> 1f2823a (Fix formatting: remove trailing blank line)
 	server.AddDefaultAccess(&knox.Access{
 		Type:       knox.UserGroup,
 		ID:         "security-team",
 		AccessType: knox.Admin,
 	})
 
+<<<<<<< HEAD
 	// Build TLS certificate
 	tlsCert, tlsKey, err := buildCert()
 	if err != nil {
@@ -98,31 +137,78 @@ func main() {
 
 	decorators := []func(http.HandlerFunc) http.HandlerFunc{
 		server.Logger(accLogger),
-		server.AddHeader("Content-Type", "application/json"),
-		server.AddHeader("X-Content-Type-Options", "nosniff"),
-		server.Authentication(
-			[]auth.Provider{
-				auth.NewMTLSAuthProvider(certPool),
-				auth.NewGitHubProvider(authTimeout),
-				auth.NewSpiffeAuthProvider(certPool),
-				auth.NewSpiffeAuthFallbackProvider(certPool),
-			},
-			nil),
+=======
+	// Setup authentication
+	certPool := x509.NewCertPool()
+	if !certPool.AppendCertsFromPEM([]byte(caCert)) {
+		fmt.Fprintf(writer, "Failed to parse CA certificate\n")
+		os.Exit(1)
 	}
 
+	// Initialize Knox logger
+	knoxLogger := log.New(writer, "", 0)
+	knoxLogger.SetVersion("dev")
+	knoxLogger.SetService(serviceName)
+
+	// Configure authentication providers
+	authProviders := []auth.Provider{
+		// GitHub provider for testing (you'll need to configure this properly)
+		auth.NewGitHubProvider(authTimeout),
+		
+		// mTLS provider for production
+		auth.NewMTLSAuthProvider(certPool),
+		
+		// SPIFFE providers for service identity
+		auth.NewSpiffeAuthProvider(certPool),
+		auth.NewSpiffeAuthFallbackProvider(certPool),
+	}
+
+	// Configure server decorators
+	decorators := []func(http.HandlerFunc) http.HandlerFunc{
+		server.Logger(knoxLogger),
+>>>>>>> 1f2823a (Fix formatting: remove trailing blank line)
+		server.AddHeader("Content-Type", "application/json"),
+		server.AddHeader("X-Content-Type-Options", "nosniff"),
+		server.Authentication(authProviders, nil),
+	}
+
+<<<<<<< HEAD
 	// Get router
 	r, err := server.GetRouter(cryptor, db, decorators, make([]server.Route, 0))
 	if err != nil {
 		fmt.Fprintf(logFile, "Failed to create router: %v\n", err)
+=======
+	// Create router
+	r, err := server.GetRouter(cryptor, db, decorators, make([]server.Route, 0))
+	if err != nil {
+		fmt.Fprintf(writer, "Failed to create router: %v\n", err)
+>>>>>>> 1f2823a (Fix formatting: remove trailing blank line)
 		os.Exit(1)
 	}
-
 	http.Handle("/", r)
 
+<<<<<<< HEAD
 	// Start server
 	fmt.Fprintf(logFile, "Starting server on %s\n", *flagAddr)
 	if err := serveTLS(tlsCert, tlsKey, *flagAddr); err != nil {
 		fmt.Fprintf(logFile, "Server failed: %v\n", err)
+=======
+	// Start HTTP redirect server
+	go func() {
+		fmt.Fprintf(writer, "Starting HTTP redirect server on %s\n", *flagHTTPPort)
+		if err := http.ListenAndServe(*flagHTTPPort, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			http.Redirect(w, r, "https://"+r.Host+*flagHTTPSPort+r.RequestURI, http.StatusMovedPermanently)
+		})); err != nil {
+			fmt.Fprintf(writer, "HTTP server failed: %v\n", err)
+			os.Exit(1)
+		}
+	}()
+
+	// Start HTTPS server
+	fmt.Fprintf(writer, "Starting HTTPS server on %s\n", *flagHTTPSPort)
+	if err := startHTTPSServer(tlsCert, tlsKey, *flagHTTPSPort, writer); err != nil {
+		fmt.Fprintf(writer, "HTTPS server failed: %v\n", err)
+>>>>>>> 1f2823a (Fix formatting: remove trailing blank line)
 		os.Exit(1)
 	}
 }
@@ -135,16 +221,27 @@ func checkPortAvailable(addr string) error {
 	return ln.Close()
 }
 
+<<<<<<< HEAD
 func buildCert() ([]byte, []byte, error) {
 	priv, err := ecdsa.GenerateKey(elliptic.P256(), crypto_rand.Reader)
+=======
+func generateTLSCertificate() ([]byte, []byte, error) {
+	privateKey, err := ecdsa.GenerateKey(elliptic.P256(), crypto_rand.Reader)
+>>>>>>> 1f2823a (Fix formatting: remove trailing blank line)
 	if err != nil {
 		return nil, nil, err
 	}
 
 	notBefore := time.Now()
+<<<<<<< HEAD
 	notAfter := notBefore.Add(365 * 24 * time.Hour) // 1 year validity
 	serialNumberLimit := new(big.Int).Lsh(big.NewInt(1), 128)
 	serialNumber, err := crypto_rand.Int(crypto_rand.Reader, serialNumberLimit)
+=======
+	notAfter := notBefore.Add(365 * 24 * time.Hour)
+
+	serialNumber, err := crypto_rand.Int(crypto_rand.Reader, new(big.Int).Lsh(big.NewInt(1), 128))
+>>>>>>> 1f2823a (Fix formatting: remove trailing blank line)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -162,22 +259,37 @@ func buildCert() ([]byte, []byte, error) {
 		DNSNames:              []string{"localhost"},
 	}
 
+<<<<<<< HEAD
 	derBytes, err := x509.CreateCertificate(crypto_rand.Reader, &template, &template, &priv.PublicKey, priv)
 	if err != nil {
 		return nil, nil, err
 	}
 
 	privBytes, err := x509.MarshalECPrivateKey(priv)
+=======
+	certDER, err := x509.CreateCertificate(crypto_rand.Reader, &template, &template, &privateKey.PublicKey, privateKey)
+>>>>>>> 1f2823a (Fix formatting: remove trailing blank line)
 	if err != nil {
 		return nil, nil, err
 	}
 
+<<<<<<< HEAD
 	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: derBytes})
 	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: privBytes})
+=======
+	privateKeyBytes, err := x509.MarshalECPrivateKey(privateKey)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: certDER})
+	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: privateKeyBytes})
+>>>>>>> 1f2823a (Fix formatting: remove trailing blank line)
 
 	return certPEM, keyPEM, nil
 }
 
+<<<<<<< HEAD
 func serveTLS(certPEMBlock, keyPEMBlock []byte, addr string) error {
 	tlsConfig := &tls.Config{
 		NextProtos:               []string{"http/1.1"},
@@ -199,6 +311,21 @@ func serveTLS(certPEMBlock, keyPEMBlock []byte, addr string) error {
 	server := &http.Server{
 		Addr:      addr,
 		TLSConfig: tlsConfig,
+=======
+func startHTTPSServer(certPEM, keyPEM []byte, addr string, writer io.Writer) error {
+	cert, err := tls.X509KeyPair(certPEM, keyPEM)
+	if err != nil {
+		return err
+	}
+
+	tlsConfig := &tls.Config{
+		Certificates: []tls.Certificate{cert},
+		MinVersion:   tls.VersionTLS12,
+		CipherSuites: []uint16{
+			tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
+			tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
+		},
+>>>>>>> 1f2823a (Fix formatting: remove trailing blank line)
 	}
 
 	ln, err := net.Listen("tcp", addr)
@@ -206,7 +333,18 @@ func serveTLS(certPEMBlock, keyPEMBlock []byte, addr string) error {
 		return err
 	}
 
+<<<<<<< HEAD
 	fmt.Printf("Server listening on %s\n", addr)
 	tlsListener := tls.NewListener(ln, tlsConfig)
 	return server.Serve(tlsListener)
 }
+=======
+	server := &http.Server{
+		Addr:      addr,
+		TLSConfig: tlsConfig,
+	}
+
+	tlsListener := tls.NewListener(ln, tlsConfig)
+	return server.Serve(tlsListener)
+}
+>>>>>>> 1f2823a (Fix formatting: remove trailing blank line)
