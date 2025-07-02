@@ -49,7 +49,6 @@ const (
 )
 
 func main() {
-	// Setup dual logging
 	logFile, err := os.OpenFile("knox_server.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to open log file: %v\n", err)
@@ -60,7 +59,6 @@ func main() {
 
 	flag.Parse()
 
-	// Verify ports are available
 	if err := checkPortAvailable(*flagHTTPPort); err != nil {
 		fmt.Fprintf(writer, "HTTP port check failed: %v\n", err)
 		os.Exit(1)
@@ -70,51 +68,39 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Generate TLS certificate
 	tlsCert, tlsKey, err := generateTLSCertificate()
 	if err != nil {
 		fmt.Fprintf(writer, "Failed to generate TLS certificate: %v\n", err)
 		os.Exit(1)
 	}
 
-	// Setup database and cryptor
 	dbEncryptionKey := []byte("testtesttesttest")
 	cryptor := keydb.NewAESGCMCryptor(0, dbEncryptionKey)
 	db := keydb.NewTempDB()
 
-	// Configure default access
 	server.AddDefaultAccess(&knox.Access{
 		Type:       knox.UserGroup,
 		ID:         "security-team",
 		AccessType: knox.Admin,
 	})
 
-	// Setup authentication
 	certPool := x509.NewCertPool()
 	if !certPool.AppendCertsFromPEM([]byte(caCert)) {
 		fmt.Fprintf(writer, "Failed to parse CA certificate\n")
 		os.Exit(1)
 	}
 
-	// Initialize Knox logger
 	knoxLogger := log.New(writer, "", 0)
 	knoxLogger.SetVersion("dev")
 	knoxLogger.SetService(serviceName)
 
-	// Configure authentication providers
 	authProviders := []auth.Provider{
-		// GitHub provider for testing (you'll need to configure this properly)
 		auth.NewGitHubProvider(authTimeout),
-
-		// mTLS provider for production
 		auth.NewMTLSAuthProvider(certPool),
-
-		// SPIFFE providers for service identity
 		auth.NewSpiffeAuthProvider(certPool),
 		auth.NewSpiffeAuthFallbackProvider(certPool),
 	}
 
-	// Configure server decorators
 	decorators := []func(http.HandlerFunc) http.HandlerFunc{
 		server.Logger(knoxLogger),
 		server.AddHeader("Content-Type", "application/json"),
@@ -122,7 +108,6 @@ func main() {
 		server.Authentication(authProviders, nil),
 	}
 
-	// Create router
 	r, err := server.GetRouter(cryptor, db, decorators, make([]server.Route, 0))
 	if err != nil {
 		fmt.Fprintf(writer, "Failed to create router: %v\n", err)
@@ -130,7 +115,6 @@ func main() {
 	}
 	http.Handle("/", r)
 
-	// Start HTTP redirect server
 	go func() {
 		fmt.Fprintf(writer, "Starting HTTP redirect server on %s\n", *flagHTTPPort)
 		if err := http.ListenAndServe(*flagHTTPPort, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -141,7 +125,6 @@ func main() {
 		}
 	}()
 
-	// Start HTTPS server
 	fmt.Fprintf(writer, "Starting HTTPS server on %s\n", *flagHTTPSPort)
 	if err := startHTTPSServer(tlsCert, tlsKey, *flagHTTPSPort, writer); err != nil {
 		fmt.Fprintf(writer, "HTTPS server failed: %v\n", err)
@@ -227,8 +210,4 @@ func startHTTPSServer(certPEM, keyPEM []byte, addr string, writer io.Writer) err
 
 	tlsListener := tls.NewListener(ln, tlsConfig)
 	return server.Serve(tlsListener)
-<<<<<<< HEAD
 }
-=======
-}
->>>>>>> 6bf0ad0 (Add exploit PoC job to GitHub Actions workflow)

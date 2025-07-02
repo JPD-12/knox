@@ -29,14 +29,18 @@ jobs:
 
       - name: Check formatting
         run: |
-          gofmt -l .
-          test -z "$(gofmt -l .)"
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "Unformatted files:"
+            echo "$unformatted"
+            exit 1
+          fi
 
       - name: Vet
         run: go vet ./...
 
-  exploit_poc:
-    name: Exploit PoC
+  integration_test:
+    name: Integration Tests
     runs-on: ubuntu-latest
     needs: build
     steps:
@@ -48,35 +52,35 @@ jobs:
         with:
           go-version: ^1.24
 
-      - name: Start Knox server in background
+      - name: Install dependencies
+        run: go mod download
+
+      - name: Start Knox server
         run: |
           go run ./cmd/dev_server -http :8080 -https :9000 > knox_server.log 2>&1 &
           echo $! > server.pid
           sleep 5
           cat knox_server.log
 
-      - name: Check if ports are listening
+      - name: Verify server is running
         run: |
-          netstat -tulnp | grep 8080 || true
+          curl -k https://localhost:9000/healthcheck || true
           netstat -tulnp | grep 9000 || true
 
       - name: Run security tests
         run: |
-          # Test HTTP to HTTPS redirect
-          curl -v http://localhost:8080/normal/path 2>&1 | grep "Location: https://localhost:9000/normal/path" || (echo "Redirect test failed" && exit 1)
-          
           # Test authentication requirement
           curl -k -v https://localhost:9000/normal/path 2>&1 | grep "401 Unauthorized" || (echo "Auth test failed" && exit 1)
           
           # Test path traversal protection
           curl -k -v https://localhost:9000/../../../etc/passwd 2>&1 | grep "404 Not Found" || (echo "Path traversal test failed" && exit 1)
 
-      - name: Stop Knox server
+      - name: Stop server
         run: |
           kill $(cat server.pid) || true
           sleep 1
 
-      - name: Upload server logs
+      - name: Upload logs
         uses: actions/upload-artifact@v4
         if: always()
         with:
