@@ -1,0 +1,24 @@
+Starting server on :9000
+{"id":"XuY1EGIBH1S72bWi9MZd","@timestamp":"2025-07-02T04:02:32.409861+04:00","service":"knox_dev","host":"Priyas-MacBook-Air.local","version":"dev","payload":{"type":"access","code":5,"status_code":401,"request":{"method":"GET","path":"/normal/path","parameters":null,"parsed_query_string":null,"principal":"","fallback_principals":null,"auth_type":"","request_uri":"","remote_addr":"[::1]:51978","tls_server":"localhost","tls_cipher":4867,"tls_version":772,"tls_resumed":false,"tls_session_id":null},"msg":"No matching authentication providers found","userAgent":"curl/8.7.1"},"payload_encoding":"JSON"}
+Starting HTTPS server on :9000
+Starting HTTP redirect server on :9000
+HTTPS server failed: listen tcp :9000: bind: address already in use
+Starting HTTPS server on :9000
+Starting HTTP redirect server on :9000
+HTTPS server failed: listen tcp :9000: bind: address already in use
+Starting HTTPS server on :9000
+Starting HTTP redirect server on :9000
+HTTPS server failed: listen tcp :9000: bind: address already in use
+Starting HTTPS server on :9000
+Starting HTTP redirect server on :9000
+HTTP server failed: listen tcp :9000: bind: address already in use
+Starting HTTPS server on :9000
+Starting HTTP redirect server on :9000
+HTTPS server failed: listen tcp :9000: bind: address already in use
+Starting HTTPS server on :9000
+Starting HTTP redirect server on :8081
+{"id":"N4LzcTpaZbFO7x2ydCWT","@timestamp":"2025-07-02T04:08:56.210047+04:00","host":"Priyas-MacBook-Air.local","payload":{"type":"access","code":5,"status_code":401,"request":{"method":"GET","path":"/normal/path","parameters":null,"parsed_query_string":null,"principal":"","fallback_principals":null,"auth_type":"","request_uri":"","remote_addr":"[::1]:52006","tls_server":"localhost","tls_cipher":4867,"tls_version":772,"tls_resumed":false,"tls_session_id":null},"msg":"No matching authentication providers found","userAgent":"curl/8.7.1"},"payload_encoding":"JSON"}
+Starting HTTPS server on :9000
+Starting HTTP redirect server on :8081
+{"id":"ChJX3Aw26FEKIdkoZcKY","@timestamp":"2025-07-02T04:13:16.07339+04:00","service":"knox_dev","host":"Priyas-MacBook-Air.local","version":"dev","payload":{"type":"access","code":5,"status_code":401,"request":{"method":"GET","path":"/normal/path","parameters":null,"parsed_query_string":null,"principal":"","fallback_principals":null,"auth_type":"","request_uri":"","remote_addr":"[::1]:52024","tls_server":"localhost","tls_cipher":4867,"tls_version":772,"tls_resumed":false,"tls_session_id":null},"msg":"No matching authentication providers found","userAgent":"curl/8.7.1"},"payload_encoding":"JSON"}
+{"id":"RufObM77UMOh19pYd75j","@timestamp":"2025-07-02T04:14:21.647529+04:00","service":"knox_dev","host":"Priyas-MacBook-Air.local","version":"dev","payload":{"type":"access","code":5,"status_code":401,"request":{"method":"GET","path":"/normal/path","parameters":null,"parsed_query_string":null,"principal":"","fallback_principals":null,"auth_type":"","request_uri":"","remote_addr":"[::1]:52027","tls_server":"localhost","tls_cipher":4867,"tls_version":772,"tls_resumed":false,"tls_session_id":null},"msg":"No matching authentication providers found","userAgent":"curl/8.7.1"},"payload_encoding":"JSON"}

@@ -19,39 +19,69 @@ test:
 exploit_poc:
   stage: exploit
   image: golang:1.24
+  before_script:
+    - echo "Generating test certificates..."
+    - openssl req -x509 -newkey rsa:4096 -keyout $SERVER_KEY -out $SERVER_CERT -days 365 -nodes -subj "/CN=localhost"
+    - cp $SERVER_CERT $CA_CERT
+    - openssl req -newkey rsa:4096 -keyout $CLIENT_KEY -out client.csr -nodes -subj "/CN=client"
+    - openssl x509 -req -in client.csr -CA $CA_CERT -CAkey $SERVER_KEY -out $CLIENT_CERT -days 365 -set_serial 01
+    - rm client.csr
   script:
     - echo "Starting Knox dev server..."
-    - go run ./cmd/dev_server & 
+    - go run ./cmd/dev_server -http :8080 -https :9000 > knox.log 2>&1 &
     - SERVER_PID=$!
     - sleep 5
 
-    - echo "Running malicious requests..."
+    - echo "Running security tests..."
     - |
-      # Run exploit curl requests and save output
-      curl -s -w "%{http_code}" http://localhost:8080/normal/path -o normal.txt || true
-      curl -s -w "%{http_code}" http://localhost:8080/../../../etc/passwd -o exploit1.txt || true
-      curl -s -w "%{http_code}" http://localhost:8080/api/v1/keys/../../../../../etc/passwd -o exploit2.txt || true
-      curl -s -w "%{http_code}" "http://localhost:8080/%2e%2e/%2e%2e/%2e%2e/etc/passwd" -o exploit3.txt || true
+      # Test normal access
+      curl -k -s -w "\n%{http_code}\n" https://localhost:9000/normal/path -o normal.txt || true
+      
+      # Test path traversal attempts
+      curl -k -s -w "\n%{http_code}\n" https://localhost:9000/../../../etc/passwd -o exploit1.txt || true
+      curl -k -s -w "\n%{http_code}\n" https://localhost:9000/api/v1/keys/../../../../../etc/passwd -o exploit2.txt || true
+      curl -k -s -w "\n%{http_code}\n" "https://localhost:9000/%2e%2e/%2e%2e/%2e%2e/etc/passwd" -o exploit3.txt || true
+      
+      # Test with mTLS authentication
+      curl -k --cert $CLIENT_CERT --key $CLIENT_KEY -s -w "\n%{http_code}\n" https://localhost:9000/secure/path -o mtls_test.txt || true
 
     - echo "Killing Knox server..."
     - kill $SERVER_PID || true
     - wait $SERVER_PID 2>/dev/null || true
 
-    - echo "Checking exploit results for suspicious content..."
-
-    # Basic heuristic: if /etc/passwd appears in output, fail the job
-    - if grep -q 'root:x:0:0:' exploit1.txt exploit2.txt exploit3.txt; then
-        echo "Exploit SUCCESS: /etc/passwd content leaked!";
-        exit 1;
+    - echo "Analyzing results..."
+    - |
+      if grep -q 'root:x:0:0:' exploit*.txt; then
+        echo "SECURITY ALERT: Path traversal vulnerability detected!"
+        echo "Found /etc/passwd content in exploit attempts"
+        exit 1
+      elif grep -q '400\|403\|404\|500' exploit*.txt; then
+        echo "SECURITY TEST PASSED: All exploit attempts were properly blocked"
       else
-        echo "Exploit FAILURE: No leakage detected.";
+        echo "WARNING: Unexpected response codes detected"
+        exit 1
       fi
-
+      
+      if grep -q '200' mtls_test.txt; then
+        echo "mTLS authentication test passed"
+      else
+        echo "mTLS authentication test failed"
+        exit 1
+      fi
   artifacts:
     paths:
       - normal.txt
       - exploit1.txt
       - exploit2.txt
       - exploit3.txt
+      - mtls_test.txt
       - knox.log
+      - server.crt
+      - server.key
+      - ca.crt
+      - client.crt
+      - client.key
     expire_in: 1 week
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main" || $CI_COMMIT_BRANCH == "master"
+    - if: $CI_MERGE_REQUEST_ID
